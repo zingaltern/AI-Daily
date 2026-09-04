@@ -2,8 +2,9 @@ name: 发送 AI 日报邮件
 
 on:
   schedule:
-    # UTC 01:00 = 北京时间 09:00 (Asia/Shanghai, UTC+8)
-    - cron: "0 1 * * *"
+    # UTC 01:35 = 北京时间 09:35 (Asia/Shanghai, UTC+8)
+    # 使用错峰分钟(35), 避免整点拥堵导致的 GitHub 调度延迟; 目标接近每天 9 点
+    - cron: "35 1 * * *"
   workflow_dispatch:
 
 permissions:
