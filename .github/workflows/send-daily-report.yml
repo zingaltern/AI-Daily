@@ -2,8 +2,8 @@ name: 发送 AI 日报邮件
 
 on:
   schedule:
-    # UTC 20:35 = 北京时间 04:35(次日) 触发; 为抵消 GitHub schedule 调度漂移(约 +5h), 实际投递约北京 09:35
-    # 说明: 该漂移是 GitHub 定时派发队列积压所致, 会随时间增长; 若日后又偏晚, 需重新下调此触发时刻
+    # UTC 20:35 = 北京时间 04:35(次日) 提前触发, 让脚本"等到当天日报(约北京 08:03 生成)再发"
+    # 不依赖 GitHub 那个浮动的调度漂移: 无论早启动就等、晚启动就直接发, 内容始终是当天最新报, 投递≈发布时刻
     - cron: "35 20 * * *"
   workflow_dispatch:
 
@@ -13,6 +13,8 @@ permissions:
 jobs:
   send-daily-report:
     runs-on: ubuntu-latest
+    # 脚本会等待当天日报(约北京 08:03 生成)发布后再发, 最多等 5h; 给足超时
+    timeout-minutes: 330
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4

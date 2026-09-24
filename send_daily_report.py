@@ -21,6 +21,12 @@ from urllib.request import Request, urlopen
 DAILY_URL = "https://aihot.virxact.com/api/v1/dailies/latest"
 API_BASE = "https://aihot.virxact.com"
 
+# 日报以北京时间(UTC+8)标注日期, 且当天报约在北京 08:00 前后才生成
+BEIJING = timezone(timedelta(hours=8))
+# 在等待窗口内轮询, 直到当天日报出现再发送, 避免发到"尚未更新"时的过期旧报
+POLL_SECONDS = 600      # 每 10 分钟检查一次
+MAX_WAIT_SECONDS = 5 * 3600  # 最多等 5 小时(须小于 workflow 的 timeout-minutes)
+
 SECTION_META = {
     "模型发布/更新": {"icon": "🚀", "color": "#6366f1", "tint": "rgba(99,102,241,.12)"},
     "产品发布/更新": {"icon": "🧩", "color": "#10b981", "tint": "rgba(16,185,129,.12)"},
@@ -192,13 +198,36 @@ def send(title, html_body):
             srv.sendmail(user, [to_addr], msg.as_string())
 
 
+def wait_for_report(target, max_wait=MAX_WAIT_SECONDS, interval=POLL_SECONDS):
+    """轮询 dailies/latest, 直到出现日期 >= target 的日报, 或等待超时。
+
+    只接受不早于 target 的报, 从而杜绝发送"当天尚未更新"时的过期旧报。
+    """
+    deadline = time.time() + max_wait
+    while True:
+        raw = fetch_latest()
+        data = json_loads(raw)
+        report = data.get("report") or {}
+        date = report.get("date", "")
+        if date and date >= target:
+            return report
+        if time.time() >= deadline:
+            return None
+        print(f"等待 {target} 日报更新, 当前最新 {date or '(无)'}, {interval}s 后重试...", file=sys.stderr)
+        time.sleep(interval)
+
+
 def main():
-    raw = fetch_latest()
-    data = json_loads(raw)
-    report = data.get("report") or {}
+    # 目标 = 今天(北京)的日报
+    target = datetime.now(BEIJING).strftime("%Y-%m-%d")
+
+    report = wait_for_report(target)
+    if report is None:
+        print(f"SKIP: 等待窗口内未出现 {target} 的日报, 本次不发送(避免发送过期内容)")
+        return None
+
     date = report.get("date", "")
     title = f"AIHOT 日报 · {date}"
-
     html_body = build_html(report)
 
     if all(os.environ.get(k) for k in ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "MAIL_TO")):
