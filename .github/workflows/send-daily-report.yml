@@ -1,20 +1,31 @@
-name: 发送 AI 日报邮件
+name: 发送 AIHOT 邮件
 
 on:
   schedule:
-    # UTC 20:35 = 北京时间 04:35(次日) 提前触发, 让脚本"等到当天日报(约北京 08:03 生成)再发"
-    # 不依赖 GitHub 那个浮动的调度漂移: 无论早启动就等、晚启动就直接发, 内容始终是当天最新报, 投递≈发布时刻
-    - cron: "35 20 * * *"
+    # 兜底: GitHub schedule 有数小时漂移, 仅作应急备份(外部定时器失效时还能跑)
+    # UTC 00:20 = 北京 08:20, 覆盖上午日报; 脚本会等到当天日报出现再发
+    - cron: "20 0 * * *"
+    # UTC 07:10 = 北京 15:10, 覆盖下午新增
+    - cron: "10 7 * * *"
   workflow_dispatch:
+    inputs:
+      kind:
+        description: "邮件类型: daily(上午日报) 或 updates(下午新增)"
+        required: false
+        default: "daily"
+        type: choice
+        options:
+          - daily
+          - updates
 
 permissions:
   contents: read
 
 jobs:
-  send-daily-report:
+  send:
     runs-on: ubuntu-latest
-    # 脚本会等待当天日报(约北京 08:03 生成)发布后再发, 最多等 5h; 给足超时
-    timeout-minutes: 330
+    # daily 模式会等待当天日报(约北京 08:00 生成)发布后再发, 最多等 2h; 给足超时
+    timeout-minutes: 150
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
@@ -24,8 +35,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 发送日报
+      - name: 发送邮件
         env:
+          REPORT_KIND: ${{ github.event_name == 'workflow_dispatch' && inputs.kind || (github.event.schedule == '10 7 * * *' && 'updates' || 'daily') }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}

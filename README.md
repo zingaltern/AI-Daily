@@ -1,19 +1,28 @@
-# 每日 AI 日报自动订阅
+# AIHOT 每日邮件订阅
 
-早上 9 点（北京时间）自动抓取 [AIHOT](https://aihot.virxact.com/) 官方精编 AI 日报，并通过邮件发送到你邮箱。
+每天发 **两封**邮件（北京时间）：
 
-- **无需服务器**：定时由 GitHub Actions 云端执行
-- **数据源**：AIHOT 官方匿名只读 API `GET /api/v1/dailies/latest`
-- **发信**：QQ 邮箱 / 163 邮箱的 SMTP（国内收信最稳）
+| 时间 | 邮件 | 内容来源 |
+|---|---|---|
+| **09:00** | AIHOT **日报** | 当天精编日报 `GET /api/v1/dailies/latest`（约 08:00 生成） |
+| **14:30** | AIHOT **速递** | 当天日报发布**之后**新增的高价值精选条目 `GET /api/v1/items` |
+
+- **无需服务器**：由 GitHub Actions 执行
+- **准点可靠**：由外部定时器（cron-job.org）在到点调用 `workflow_dispatch` 触发，绕开 GitHub `schedule` 的数小时漂移
+- **发信**：QQ 邮箱 / 163 邮箱的 SMTP
 
 ## 目录结构
 
 ```
 .
-├── .github/workflows/send-daily-report.yml   # 定时工作流（每天 09:00 北京）
-├── send_daily_report.py                       # 抓取日报 → 生成 HTML → 发信
+├── .github/workflows/send-daily-report.yml   # 工作流（支持 daily / updates 两种邮件）
+├── send_daily_report.py                       # 抓取 → 生成 HTML → 发信
 └── README.md
 ```
+
+脚本通过环境变量 `REPORT_KIND` 选择邮件类型：
+- `REPORT_KIND=daily`  → 当天日报
+- `REPORT_KIND=updates` → 下午新增精选
 
 ## 一、准备发件邮箱的 SMTP 授权码
 
@@ -28,8 +37,6 @@
 - SMTP 服务器：`smtp.qq.com`，端口 `465`
 - SMTP 用户名：你的 QQ 邮箱地址（`xxx@qq.com`）
 
-> 若已有独立授权码且是从 QQ 邮箱客户端生成的，直接用即可；没有就按上面流程生成。
-
 ### 163 邮箱
 1. 登录 [mail.163.com](https://mail.163.com)，进入 **设置 → POP3/SMTP/IMAP**
 2. 开启「**SMTP 服务**」
@@ -40,51 +47,74 @@
 
 ## 二、把代码推到 GitHub 并配置 Secrets
 
-### 1. 建仓库并推送
-```bash
-# 在项目目录里执行
-git add .
-git commit -m "add AI daily report auto-subscription"
-git remote add origin <你的仓库地址>
-git branch -M main
-git push -u origin main
-```
-
-### 2. 配置 GitHub Secrets
-在仓库页面进入 **Settings → Secrets and variables → Actions → New repository secret**，逐个添加下面 4 个：
+在仓库 **Settings → Secrets and variables → Actions → New repository secret**，添加：
 
 | Secret 名称 | 值 |
 |---|---|
 | `SMTP_HOST` | `smtp.qq.com` 或 `smtp.163.com` |
 | `SMTP_PORT` | `465` |
 | `SMTP_USER` | 发件邮箱（如 `xxx@qq.com`） |
-| `SMTP_PASSWORD` | 第二步拿到的 SMTP 授权码 |
+| `SMTP_PASSWORD` | SMTP 授权码 |
 | `MAIL_TO` | 收件邮箱（可和发件邮箱相同） |
 
-## 三、首次验证
+## 三、配置外部定时器（准点触发）
 
-在仓库 **Actions** 页面，选「发送 AI 日报邮件」→ **Run workflow**（手动触发一次）。
+GitHub 自带的 `schedule` 会漂移数小时，因此**用外部定时器准点调用** `workflow_dispatch`。
 
-成功后：
-- Actions 运行显示绿色
-- 你的邮箱收到一封 AIHOT 日报的 HTML 邮件
+### 1. 创建细粒度 GitHub Token
+- 打开 <https://github.com/settings/tokens?type=beta> → Generate new token
+- Repository access：**Only select repositories** → 选本仓库
+- Permissions → Repository permissions → **Actions: Read and write**
+- 生成后复制 token（`github_pat_...`）
 
-## 四、之后的工作
+### 2. cron-job.org 建两个任务
+登录 <https://cron-job.org> → Create cron job：
 
-- 每天北京时间 09:00（UTC 01:00）由 cron 自动触发，无需任何操作
-- Actions 运行日志里能看到「OK: 日报 … 已发送到 …」
+- Method：**POST**
+- URL：
+  ```
+  https://api.github.com/repos/<owner>/<repo>/actions/workflows/send-daily-report.yml/dispatches
+  ```
+- Headers：
+  ```
+  Authorization: Bearer <github_pat_...>
+  Accept: application/vnd.github+json
+  Content-Type: application/json
+  ```
+- Body（JSON）：
+  - 上午 09:00（时区选 **Asia/Shanghai**）：`{"ref":"main","inputs":{"kind":"daily"}}`
+  - 下午 14:30（时区选 **Asia/Shanghai**）：`{"ref":"main","inputs":{"kind":"updates"}}`
+
+## 四、首次验证
+
+仓库 **Actions** → 「发送 AIHOT 邮件」→ **Run workflow**，`kind` 选 `daily` 或 `updates`，各跑一次确认能收到。
+
+## 五、之后的工作
+
+- 外部定时器每日 09:00 / 14:30 自动触发，无需操作
+- 日志里能看到 `OK: AIHOT 日报 ... 已发送到 ...` / `OK: AIHOT 速递 ...`
 
 ## 常见问题
 
-- **邮件进了垃圾箱**：把发件邮箱加入联系人/白名单，或稍后第 1 封正常后一般不再被拦。
-- **不想每天收 / 想改时间**：改 `.github/workflows/send-daily-report.yml` 里 `cron: "0 1 * * *"` 的分钟/小时（UTC），推送到仓库即可。
-- **想本地测一次**（确认脚本没问题，需电脑能连外网）：
+- **邮件进了垃圾箱**：把发件邮箱加入白名单。
+- **想改时间/条数**：时间改 cron-job.org；下午邮件条数/分数门槛可用环境变量 `UPDATES_SINCE_HOUR`(默认8)、`UPDATES_MIN_SCORE`(默认60)、`UPDATES_LIMIT`(默认15) 调整。
+- **本地测一次**：
   ```bash
-  python3 send_daily_report.py
-  # 不配 SMTP 环境变量时，只打印抓到的日报，不发生信
+  REPORT_KIND=daily   python3 send_daily_report.py   # 日报
+  REPORT_KIND=updates python3 send_daily_report.py   # 下午新增
+  # 不配 SMTP 环境变量时，只打印将发送的内容，不发生信
   ```
+
+## API 速查（AIHOT，匿名只读）
+
+- `GET /api/v1/dailies/latest` — 当天日报
+- `GET /api/v1/dailies` — 日报列表（`limit`）
+- `GET /api/v1/dailies/{date}` — 指定日期日报
+- `GET /api/v1/items` — 实时条目，参数：`window=24h|7d`、`mode=selected|all`、`category=ai-models|ai-products|industry|paper|tip`、`q=`、`by=timeline|published`、`limit`、`cursor`
+
+基址：`https://aihot.virxact.com`
 
 ## 安全提醒
 
-- Smtp 授权码是敏感凭据，**只放到 GitHub Secrets**，绝不要写死在代码里或提交到仓库。
-- 本脚本已从环境变量读取配置，代码内不含任何密码。
+- Token 与 SMTP 授权码都是敏感凭据，**只放到 GitHub Secrets / 外部定时器**，不要提交到仓库。
+- 外部定时器用的 GitHub Token 请使用**细粒度、仅授权本仓库、仅 Actions 权限**，并设置合适的有效期。
