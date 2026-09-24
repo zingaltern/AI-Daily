@@ -15,7 +15,6 @@ import os
 import smtplib
 import ssl
 import sys
-import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -29,9 +28,6 @@ ITEMS_URL = f"{API_BASE}/api/v1/items"
 
 # 数据以北京时间(UTC+8)标注日期, 当天日报约在北京 08:00 前后生成
 BEIJING = timezone(timedelta(hours=8))
-# 日报在等待窗口内轮询, 直到当天日报出现再发送, 避免发到"尚未更新"时的过期旧报
-POLL_SECONDS = 300      # 每 5 分钟检查一次
-MAX_WAIT_SECONDS = 2 * 3600  # daily 模式最多等 2 小时(须小于 workflow 的 timeout-minutes)
 
 # updates 模式: 只取"今天这个时刻之后"发布/收录的高价值条目
 UPDATES_SINCE_HOUR = int(os.environ.get("UPDATES_SINCE_HOUR", "8"))  # 默认 08:00(北京)
@@ -327,22 +323,18 @@ def send(title, html_body, plain_note=None):
             srv.sendmail(user, [to_addr], msg.as_string())
 
 
-def wait_for_report(target, max_wait=MAX_WAIT_SECONDS, interval=POLL_SECONDS):
-    """轮询 dailies/latest, 直到出现日期 >= target 的日报, 或等待超时。
+def get_today_report(target):
+    """拉一次 dailies/latest; 仅当它就是 target(今天) 的日报时返回, 否则返回 None。
 
-    只接受不早于 target 的报, 从而杜绝发送"当天尚未更新"时的过期旧报。
+    不轮询: 09:00 触发时当天日报(约 08:00 生成)应已就绪。若不是当天报, 跳过而不发过期内容。
     """
-    deadline = time.time() + max_wait
-    while True:
-        data = fetch_json(DAILY_URL)
-        report = data.get("report") or {}
-        date = report.get("date", "")
-        if date and date >= target:
-            return report
-        if time.time() >= deadline:
-            return None
-        print(f"等待 {target} 日报更新, 当前最新 {date or '(无)'}, {interval}s 后重试...", file=sys.stderr)
-        time.sleep(interval)
+    data = fetch_json(DAILY_URL)
+    report = data.get("report") or {}
+    date = report.get("date", "")
+    if date and date >= target:
+        return report
+    print(f"当前最新日报为 {date or '(无)'}, 不是 {target}, 跳过不发送", file=sys.stderr)
+    return None
 
 
 def smtp_configured():
@@ -360,11 +352,11 @@ def deliver(title, html_body, plain_note):
 
 
 def run_daily():
-    """上午: 当天精编日报。"""
+    """上午: 当天精编日报 (拉一次, 是当天报才发)。"""
     target = datetime.now(BEIJING).strftime("%Y-%m-%d")
-    report = wait_for_report(target)
+    report = get_today_report(target)
     if report is None:
-        print(f"SKIP: 等待窗口内未出现 {target} 的日报, 本次不发送(避免发送过期内容)")
+        print(f"SKIP: 尚无 {target} 的日报, 本次不发送(避免发送过期内容)")
         return None
     date = report.get("date", "")
     title = f"AIHOT 日报 · {date}"
