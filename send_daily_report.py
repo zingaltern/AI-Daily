@@ -35,7 +35,7 @@ MAX_WAIT_SECONDS = 2 * 3600  # daily 模式最多等 2 小时(须小于 workflow
 
 # updates 模式: 只取"今天这个时刻之后"发布/收录的高价值条目
 UPDATES_SINCE_HOUR = int(os.environ.get("UPDATES_SINCE_HOUR", "8"))  # 默认 08:00(北京)
-UPDATES_MIN_SCORE = int(os.environ.get("UPDATES_MIN_SCORE", "60"))   # 最低评分
+UPDATES_MIN_SCORE = int(os.environ.get("UPDATES_MIN_SCORE", "80"))   # 最低评分
 UPDATES_LIMIT = int(os.environ.get("UPDATES_LIMIT", "15"))           # 最多条数
 UPDATES_ALLOWED_CATEGORIES = {
     "ai-models", "ai-products", "industry", "paper", "tip",
