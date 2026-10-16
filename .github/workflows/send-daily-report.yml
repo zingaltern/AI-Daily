@@ -13,6 +13,11 @@ on:
         options:
           - daily
           - updates
+      force:
+        description: "绕过发送时间窗(仅手动测试用; 外部定时器不要传)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -33,6 +38,7 @@ jobs:
       - name: 发送邮件
         env:
           REPORT_KIND: ${{ inputs.kind || 'daily' }}
+          FORCE_SEND: ${{ inputs.force }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
