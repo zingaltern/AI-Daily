@@ -9,7 +9,10 @@
 
 - **无需服务器**：由 GitHub Actions 执行
 - **准点可靠**：由外部定时器（cron-job.org）在到点调用 `workflow_dispatch` 触发，绕开 GitHub `schedule` 的数小时漂移
+- **不会错时**：脚本内置发送时间窗（daily 仅 05:00–12:00、updates 仅 12:00–21:00，北京时间），窗外一律跳过
 - **发信**：QQ 邮箱 / 163 邮箱的 SMTP
+
+> ⚠️ **不要在工作流里加回 `schedule`**。GitHub 的 `schedule` 会漂移几小时，曾在下午发日报、半夜发速递，造成错时与重复邮件。触发只走外部定时器。
 
 ## 目录结构
 
@@ -97,7 +100,8 @@ GitHub 自带的 `schedule` 会漂移数小时，因此**用外部定时器准�
 ## 常见问题
 
 - **邮件进了垃圾箱**：把发件邮箱加入白名单。
-- **想改时间/条数**：时间改 cron-job.org；下午邮件条数/分数门槛可用环境变量 `UPDATES_SINCE_HOUR`(默认8)、`UPDATES_MIN_SCORE`(默认60)、`UPDATES_LIMIT`(默认15) 调整。
+- **想改时间/条数**：时间改 cron-job.org；下午邮件条数/分数门槛可用环境变量 `UPDATES_SINCE_HOUR`(默认8)、`UPDATES_MIN_SCORE`(默认80)、`UPDATES_LIMIT`(默认15) 调整。
+- **发送时间窗**：`daily` 仅北京 05:00–12:00、`updates` 仅 12:00–21:00 会发，窗外自动跳过（防错时）。手动补发/测试可设 `FORCE_SEND=1` 绕过。
 - **本地测一次**：
   ```bash
   REPORT_KIND=daily   python3 send_daily_report.py   # 日报

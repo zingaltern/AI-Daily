@@ -15,6 +15,7 @@ import os
 import smtplib
 import ssl
 import sys
+import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -28,6 +29,12 @@ ITEMS_URL = f"{API_BASE}/api/v1/items"
 
 # 数据以北京时间(UTC+8)标注日期, 当天日报约在北京 08:00 前后生成
 BEIJING = timezone(timedelta(hours=8))
+
+# 发送时间窗(北京小时, 左闭右开): 窗外一律跳过, 防止任何来源的错时触发发出邮件
+# 例: 曾因 GitHub schedule 漂移, 在下午发出日报、半夜发出速递 —— 该护栏可杜绝此类错时发送
+SEND_WINDOWS = {"daily": (5, 12), "updates": (12, 21)}
+# 测试/手动补发时, 设 FORCE_SEND=1 可绕过时间窗
+FORCE_SEND = os.environ.get("FORCE_SEND", "").strip() in ("1", "true", "yes")
 
 # updates 模式: 只取"今天这个时刻之后"发布/收录的高价值条目
 UPDATES_SINCE_HOUR = int(os.environ.get("UPDATES_SINCE_HOUR", "8"))  # 默认 08:00(北京)
@@ -60,10 +67,29 @@ def fmt_date_cn(date_str):
         return date_str
 
 
-def fetch_json(url):
-    req = Request(url, headers={"User-Agent": "AIHOT-Daily-Sub/1.0"})
-    with urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def fetch_json(url, attempts=3):
+    """GET 并解析 JSON; 对瞬时错误(如 AIHOT 偶发 5xx/545)做轻量重试。"""
+    last = None
+    for i in range(1, attempts + 1):
+        try:
+            req = Request(url, headers={"User-Agent": "AIHOT-Daily-Sub/1.0"})
+            with urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if i < attempts:
+                print(f"抓取失败({i}/{attempts}): {exc}, 5s 后重试", file=sys.stderr)
+                time.sleep(5)
+    raise last
+
+
+def in_send_window(kind):
+    """当前是否处于该邮件类型的发送时间窗内(或已用 FORCE_SEND 绕过)。"""
+    if FORCE_SEND:
+        return True, "FORCE_SEND"
+    lo, hi = SEND_WINDOWS.get(kind, (0, 24))
+    hour = datetime.now(BEIJING).hour
+    return (lo <= hour < hi), f"允许时段 {lo:02d}:00-{hi:02d}:00(北京)"
 
 
 def parse_ts(s):
@@ -353,6 +379,10 @@ def deliver(title, html_body, plain_note):
 
 def run_daily():
     """上午: 当天精编日报 (拉一次, 是当天报才发)。"""
+    ok, why = in_send_window("daily")
+    if not ok:
+        print(f"SKIP: 当前不在 daily 发送时间窗内({why}), 本次不发送")
+        return None
     target = datetime.now(BEIJING).strftime("%Y-%m-%d")
     report = get_today_report(target)
     if report is None:
@@ -366,6 +396,10 @@ def run_daily():
 
 def run_updates():
     """下午: 当天日报之后的新增精选条目。"""
+    ok, why = in_send_window("updates")
+    if not ok:
+        print(f"SKIP: 当前不在 updates 发送时间窗内({why}), 本次不发送")
+        return []
     items, cutoff = fetch_updates()
     today = datetime.now(BEIJING).strftime("%Y-%m-%d")
     if not items:

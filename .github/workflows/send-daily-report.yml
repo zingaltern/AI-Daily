@@ -1,12 +1,8 @@
 name: 发送 AIHOT 邮件
 
 on:
-  schedule:
-    # 兜底: GitHub schedule 有数小时漂移, 仅作应急备份(外部定时器失效时还能跑)
-    # UTC 01:20 = 北京 09:20, 覆盖上午日报; 若届时当天报未就绪则跳过
-    - cron: "20 1 * * *"
-    # UTC 06:40 = 北京 14:40, 覆盖下午新增
-    - cron: "40 6 * * *"
+  # 只保留 workflow_dispatch: 由外部定时器(cron-job.org)准点触发, 绕开 GitHub schedule 的数小时漂移。
+  # 注意: 不要加回 schedule —— GitHub 的 schedule 会漂移几小时, 曾在下午发日报、半夜发速递, 造成错时+重复。
   workflow_dispatch:
     inputs:
       kind:
@@ -36,7 +32,7 @@ jobs:
 
       - name: 发送邮件
         env:
-          REPORT_KIND: ${{ github.event_name == 'workflow_dispatch' && inputs.kind || (github.event.schedule == '40 6 * * *' && 'updates' || 'daily') }}
+          REPORT_KIND: ${{ inputs.kind || 'daily' }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
