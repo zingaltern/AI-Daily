@@ -4,7 +4,7 @@
 
 | 时间 | 邮件 | 内容来源 |
 |---|---|---|
-| **09:00** | AIHOT **日报** | 当天精编日报 `GET /api/v1/dailies/latest`（约 08:00 生成） |
+| **10:00** | AIHOT **日报** | 当天精编日报 `GET /api/v1/dailies/latest`（约 08:00 生成） |
 | **14:30** | AIHOT **速递** | 当天日报发布**之后**新增的高价值精选条目 `GET /api/v1/items` |
 
 - **无需服务器**：由 GitHub Actions 执行
@@ -85,7 +85,7 @@ GitHub 自带的 `schedule` 会漂移数小时，因此**用外部定时器准�
   Content-Type: application/json
   ```
 - Body（JSON）：
-  - 上午 09:00（时区选 **Asia/Shanghai**）：`{"ref":"main","inputs":{"kind":"daily"}}`
+  - 上午 10:00（时区选 **Asia/Shanghai**）：`{"ref":"main","inputs":{"kind":"daily"}}`
   - 下午 14:30（时区选 **Asia/Shanghai**）：`{"ref":"main","inputs":{"kind":"updates"}}`
 
 ## 四、首次验证
